@@ -1,0 +1,28 @@
+# Dependencies
+node_modules/
+npm-debug.log*
+
+# Environment and Config
+config.json
+.env
+.env.local
+
+# Logs
+logs/
+*.log
+
+# Downloaded Files
+ROSS_Images/
+
+# OS Files
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Cloudflare
+.cloudflared/
