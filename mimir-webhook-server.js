@@ -1079,7 +1079,7 @@ async function updateMimirWebhook(webhookUrl) {
 
     // Find ALL webhooks that use the /webhook/mimir-ross endpoint
     const rossWebhooks = webhooks.filter(wh =>
-      wh.label === 'ROSS Folder Monitor' || wh.url?.includes('/webhook/mimir-ross')
+      wh.label?.includes('ROSS Folder') || wh.url?.includes('/webhook/mimir-ross')
     );
 
     if (rossWebhooks.length > 0) {
@@ -1108,7 +1108,51 @@ async function updateMimirWebhook(webhookUrl) {
 
       await logToFile(`[WEBHOOK] Successfully updated ${rossWebhooks.length} webhook(s)`);
     } else {
-      await logToFile(`[WEBHOOK] No existing webhooks found - manual configuration required`);
+      // No existing webhooks found - create them automatically
+      await logToFile(`[WEBHOOK] No existing webhooks found - creating automatically...`);
+
+      const webhooksToCreate = [
+        {
+          label: 'ROSS Folder - Item Creation',
+          url: webhookUrl,
+          event: 'item_created',
+          folderId: CONFIG.rossFolderId,
+          enabled: true
+        },
+        {
+          label: 'ROSS Folder - Item Change',
+          url: webhookUrl,
+          event: 'item_changed',
+          folderId: CONFIG.rossFolderId,
+          enabled: true
+        }
+      ];
+
+      for (const webhookConfig of webhooksToCreate) {
+        try {
+          await logToFile(`[WEBHOOK] Creating webhook: "${webhookConfig.label}" (Event: ${webhookConfig.event})`);
+
+          await axios.post(
+            'https://mimir.mjoll.no/config/api/v1/config/webhooks',
+            webhookConfig,
+            {
+              headers: {
+                'x-mimir-cognito-id-token': `Bearer ${CONFIG.apiKey}`,
+                'Content-Type': 'application/json'
+              }
+            }
+          );
+
+          await logToFile(`[WEBHOOK] ✓ Created webhook: "${webhookConfig.label}"`);
+        } catch (createError) {
+          await logToFile(`[WEBHOOK] Failed to create "${webhookConfig.label}": ${createError.message}`);
+          if (createError.response) {
+            await logToFile(`[WEBHOOK] Error details: ${JSON.stringify(createError.response.data)}`);
+          }
+        }
+      }
+
+      await logToFile(`[WEBHOOK] Webhook creation complete`);
     }
 
     // Update sync status
