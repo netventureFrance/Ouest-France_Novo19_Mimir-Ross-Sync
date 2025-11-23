@@ -452,14 +452,13 @@ app.post('/webhook/mimir-ross', async (req, res) => {
   try {
     const { event, item } = req.body;
 
-    // Process item_created and item_updated events (item_updated includes moves to folders)
-    const supportedEvents = ['item_created', 'item_updated', 'folder_content_changed'];
-    if (!supportedEvents.includes(event)) {
-      await logToFile(`[SKIP] Event '${event}' ignored (not in supported events: ${supportedEvents.join(', ')})`);
+    // Only process item_created events (Mimir only supports Item Creation webhooks)
+    if (event !== 'item_created') {
+      await logToFile(`[SKIP] Event '${event}' ignored (only item_created is supported by Mimir)`);
       return res.json({ status: 'ignored', event });
     }
 
-    await logToFile(`[WEBHOOK] Event '${event}' - Item: ${item.id} (${item.itemType})`);
+    await logToFile(`[WEBHOOK] New item: ${item.id} (${item.itemType})`);
 
     // Fetch full item details
     const fullItem = await getItemDetails(item.id);
@@ -469,7 +468,7 @@ app.post('/webhook/mimir-ross', async (req, res) => {
     const isInRossFolder = folderParents.includes(CONFIG.rossFolderId);
 
     if (!isInRossFolder) {
-      await logToFile(`[SKIP] Item ${item.id} not in ROSS folder (event: ${event})`);
+      await logToFile(`[SKIP] Item ${item.id} not in ROSS folder`);
       return res.json({ status: 'skipped', message: 'Not in ROSS folder' });
     }
 
