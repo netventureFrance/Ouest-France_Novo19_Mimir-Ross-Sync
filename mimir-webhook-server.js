@@ -1077,29 +1077,38 @@ async function updateMimirWebhook(webhookUrl) {
       await logToFile(`[WEBHOOK] Example webhook structure: ${JSON.stringify(webhooks[0], null, 2)}`);
     }
 
-    const rossWebhook = webhooks.find(wh =>
+    // Find ALL webhooks that use the /webhook/mimir-ross endpoint
+    const rossWebhooks = webhooks.filter(wh =>
       wh.label === 'ROSS Folder Monitor' || wh.url?.includes('/webhook/mimir-ross')
     );
 
-    if (rossWebhook) {
-      await logToFile(`[WEBHOOK] Found existing webhook, updating URL only`);
-      // Just update the URL of the existing webhook
-      rossWebhook.url = webhookUrl;
+    if (rossWebhooks.length > 0) {
+      await logToFile(`[WEBHOOK] Found ${rossWebhooks.length} existing webhook(s) to update`);
 
-      // Update existing webhook
-      await axios.put(
-        `https://mimir.mjoll.no/config/api/v1/config/webhooks/${rossWebhook.id}`,
-        rossWebhook,
-        {
-          headers: {
-            'x-mimir-cognito-id-token': `Bearer ${CONFIG.apiKey}`,
-            'Content-Type': 'application/json'
+      // Update each webhook that uses the ROSS endpoint
+      for (const webhook of rossWebhooks) {
+        await logToFile(`[WEBHOOK] Updating webhook: "${webhook.label}" (Event: ${webhook.event || 'unknown'})`);
+
+        // Update the URL
+        webhook.url = webhookUrl;
+
+        // Update existing webhook
+        await axios.put(
+          `https://mimir.mjoll.no/config/api/v1/config/webhooks/${webhook.id}`,
+          webhook,
+          {
+            headers: {
+              'x-mimir-cognito-id-token': `Bearer ${CONFIG.apiKey}`,
+              'Content-Type': 'application/json'
+            }
           }
-        }
-      );
-      await logToFile(`[WEBHOOK] Updated existing webhook URL: ${webhookUrl}`);
+        );
+        await logToFile(`[WEBHOOK] ✓ Updated "${webhook.label}" with URL: ${webhookUrl}`);
+      }
+
+      await logToFile(`[WEBHOOK] Successfully updated ${rossWebhooks.length} webhook(s)`);
     } else {
-      await logToFile(`[WEBHOOK] No existing webhook found - manual configuration required`);
+      await logToFile(`[WEBHOOK] No existing webhooks found - manual configuration required`);
     }
 
     // Update sync status
