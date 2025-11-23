@@ -16,7 +16,7 @@ let CONFIG = {
   logFile: path.join(__dirname, 'logs', 'mimir-ross.log'),
   downloadDir: path.join(__dirname, 'ROSS_Images'),
   heartbeatInterval: 5 * 60 * 1000, // 5 minutes in milliseconds
-  syncInterval: 30 * 60 * 1000, // 30 minutes in milliseconds - auto-sync moved files
+  syncInterval: 1 * 60 * 1000, // 1 minute in milliseconds - auto-sync to catch any missed files
   publicUrl: '' // Public URL for webhooks (e.g., Cloudflare Tunnel)
 };
 
@@ -455,13 +455,13 @@ app.post('/webhook/mimir-ross', async (req, res) => {
   try {
     const { event, item } = req.body;
 
-    // Only process item_created events (Mimir only supports Item Creation webhooks)
-    if (event !== 'item_created') {
-      await logToFile(`[SKIP] Event '${event}' ignored (only item_created is supported by Mimir)`);
+    // Process both item_created and item_changed events (for moved files)
+    if (event !== 'item_created' && event !== 'item_changed') {
+      await logToFile(`[SKIP] Event '${event}' ignored (not item_created or item_changed)`);
       return res.json({ status: 'ignored', event });
     }
 
-    await logToFile(`[WEBHOOK] New item: ${item.id} (${item.itemType})`);
+    await logToFile(`[WEBHOOK] Event '${event}' - Item: ${item.id} (${item.itemType})`);
 
     // Fetch full item details
     const fullItem = await getItemDetails(item.id);
