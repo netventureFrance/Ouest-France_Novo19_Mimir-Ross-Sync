@@ -783,8 +783,8 @@ header h1 .brand-novo {
     padding: 2rem;
     overflow-y: auto;
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
-    gap: 1.5rem;
+    grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+    gap: 1rem;
     max-height: calc(90vh - 100px);
 }
 
@@ -794,6 +794,7 @@ header h1 .brand-novo {
     border-radius: 8px;
     overflow: hidden;
     transition: all 0.3s ease;
+    position: relative;
 }
 
 .file-card:hover {
@@ -804,7 +805,7 @@ header h1 .brand-novo {
 
 .file-thumbnail {
     width: 100%;
-    height: 200px;
+    height: 140px;
     object-fit: cover;
     display: block;
     background: var(--background-dark);
@@ -812,7 +813,7 @@ header h1 .brand-novo {
 
 .file-thumbnail-placeholder {
     width: 100%;
-    height: 200px;
+    height: 140px;
     background: linear-gradient(135deg, var(--background-dark) 0%, var(--surface) 100%);
     display: flex;
     align-items: center;
@@ -859,6 +860,34 @@ header h1 .brand-novo {
     text-transform: uppercase;
     font-weight: 600;
     letter-spacing: 0.5px;
+}
+
+.file-copy-btn {
+    position: absolute;
+    top: 0.5rem;
+    right: 0.5rem;
+    background: rgba(0, 0, 0, 0.7);
+    border: none;
+    border-radius: 6px;
+    padding: 0.5rem;
+    cursor: pointer;
+    opacity: 0;
+    transition: opacity 0.3s ease, background 0.2s ease;
+    z-index: 10;
+}
+
+.file-card:hover .file-copy-btn {
+    opacity: 1;
+}
+
+.file-copy-btn:hover {
+    background: var(--primary);
+}
+
+.copy-icon {
+    font-size: 1.2rem;
+    display: block;
+    line-height: 1;
 }
 
 .no-files {

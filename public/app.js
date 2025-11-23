@@ -93,9 +93,9 @@ function updateWebhookUrl() {
     document.getElementById('webhookUrl').value = webhookUrl;
 
     // Update Monitor display
-    const mimirWebhookDisplay = document.getElementById('mimirWebhookUrl');
-    if (mimirWebhookDisplay) {
-        mimirWebhookDisplay.textContent = webhookUrl;
+    const monitorWebhookDisplay = document.getElementById('monitorWebhookUrl');
+    if (monitorWebhookDisplay) {
+        monitorWebhookDisplay.textContent = webhookUrl;
     }
 }
 
@@ -192,6 +192,38 @@ async function loadLogs() {
 }
 
 // Actions
+async function openMimirUpload() {
+    try {
+        const response = await fetch('/api/config');
+        const config = await response.json();
+
+        if (config.rossFolderId) {
+            // Construct Mimir URL with all required query parameters
+            const timestamp = Date.now();
+            const params = new URLSearchParams({
+                searchString: 'type:video,image,audio,file,clipList,timeline',
+                viewType: 'list',
+                isFuzzy: 'false',
+                atSameTime: 'false',
+                defaultDateRangeField: 'mediaCreatedOn',
+                ts: timestamp,
+                useCustomSearchHook: 'false',
+                allTypes: 'false',
+                folderId: config.rossFolderId
+            });
+
+            const mimirUrl = `https://mimir.mjoll.no/folders?${params.toString()}`;
+            window.open(mimirUrl, '_blank');
+            showNotification('Opening Mimir folder in new tab...', 'info');
+        } else {
+            showNotification('ROSS folder ID not configured', 'error');
+        }
+    } catch (error) {
+        showNotification('Failed to open Mimir', 'error');
+        console.error(error);
+    }
+}
+
 async function syncNow() {
     showNotification('Starting sync...', 'info');
 
@@ -204,6 +236,33 @@ async function syncNow() {
         }
     } catch (error) {
         showNotification('Failed to start sync', 'error');
+    }
+}
+
+async function restartServer() {
+    if (!confirm('Are you sure you want to restart the server? This will disconnect all active connections.')) {
+        return;
+    }
+
+    showNotification('Restarting server...', 'warning');
+
+    try {
+        const response = await fetch('/api/restart', { method: 'POST' });
+        if (response.ok) {
+            showNotification('Server is restarting... Please wait 5 seconds and reload the page.', 'success');
+            // Auto reload page after 5 seconds
+            setTimeout(() => {
+                window.location.reload();
+            }, 5000);
+        } else {
+            showNotification('Failed to restart server', 'error');
+        }
+    } catch (error) {
+        // Expected error as server will close connection
+        showNotification('Server is restarting... Page will reload automatically.', 'info');
+        setTimeout(() => {
+            window.location.reload();
+        }, 5000);
     }
 }
 
@@ -236,6 +295,9 @@ async function viewFiles() {
                         <span class="file-type-badge">${file.itemType || 'unknown'}</span>
                     </div>
                 </div>
+                <button class="file-copy-btn" onclick="copyFilePath('${escapeHtml(file.path || file.name)}', '${escapeHtml(file.title || file.name)}')" title="Copy file path to clipboard">
+                    <span class="copy-icon">📋</span>
+                </button>
             </div>
         `).join('');
     } catch (error) {
@@ -246,6 +308,16 @@ async function viewFiles() {
 
 function closeFileModal() {
     document.getElementById('fileModal').style.display = 'none';
+}
+
+// Copy file path to clipboard
+function copyFilePath(path, fileName) {
+    navigator.clipboard.writeText(path).then(() => {
+        showNotification(`Copied: ${fileName}`, 'success');
+    }).catch(err => {
+        console.error('Failed to copy:', err);
+        showNotification('Failed to copy file path', 'error');
+    });
 }
 
 async function clearLogs() {

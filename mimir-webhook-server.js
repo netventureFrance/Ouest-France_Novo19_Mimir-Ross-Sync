@@ -122,6 +122,139 @@ async function getFolderContents(folderId) {
   }
 }
 
+// Helper function to sanitize filenames
+function sanitizeFilename(filename) {
+  if (!filename) return 'untitled';
+  return filename.replace(/[^a-z0-9_\-\.]/gi, '_');
+}
+
+// Upload file to Mimir ROSS folder using multi-step workflow
+async function uploadFileToMimir(filePath, filename) {
+  try {
+    await logToFile(`[UPLOAD] Starting upload for ${filename}...`);
+
+    const stats = fsSync.statSync(filePath);
+    const fileSizeMB = (stats.size / 1024 / 1024).toFixed(2);
+    const fileSize = stats.size;
+
+    // Step 1: Create item entry (metadata)
+    await logToFile(`[UPLOAD] Step 1/5 - Creating item entry...`);
+    const createItemResponse = await axios.post(
+      `${CONFIG.mimirApiUrl}/items`,
+      {
+        originalFileName: filename,
+        mediaSize: fileSize,
+        itemType: getFileType(filename)
+      },
+      {
+        headers: {
+          'x-mimir-cognito-id-token': `Bearer ${CONFIG.apiKey}`,
+          'Content-Type': 'application/json'
+        }
+      }
+    );
+
+    const itemId = createItemResponse.data.id;
+    await logToFile(`[UPLOAD] Created item ${itemId}`);
+
+    // Step 2: Request signed upload URL
+    await logToFile(`[UPLOAD] Step 2/5 - Requesting upload URL...`);
+    const uploadUrlResponse = await axios.post(
+      `${CONFIG.mimirApiUrl}/items/${itemId}/upload/multipart`,
+      {
+        parts: 1, // Single part for small files
+        fileName: filename
+      },
+      {
+        headers: {
+          'x-mimir-cognito-id-token': `Bearer ${CONFIG.apiKey}`,
+          'Content-Type': 'application/json'
+        }
+      }
+    );
+
+    const uploadUrl = uploadUrlResponse.data.urls?.[0] || uploadUrlResponse.data.url;
+    const uploadId = uploadUrlResponse.data.uploadId;
+
+    if (!uploadUrl) {
+      throw new Error('No upload URL received from Mimir');
+    }
+
+    await logToFile(`[UPLOAD] Step 3/5 - Uploading file (${fileSizeMB} MB)...`);
+
+    // Step 3: Upload file to presigned URL
+    const fileBuffer = fsSync.readFileSync(filePath);
+    const uploadResponse = await axios.put(uploadUrl, fileBuffer, {
+      headers: {
+        'Content-Type': 'application/octet-stream'
+      },
+      maxContentLength: Infinity,
+      maxBodyLength: Infinity
+    });
+
+    const etag = uploadResponse.headers.etag;
+
+    // Step 4: Complete multipart upload
+    await logToFile(`[UPLOAD] Step 4/5 - Completing upload...`);
+    await axios.post(
+      `${CONFIG.mimirApiUrl}/items/${itemId}/upload/multipart/complete`,
+      {
+        parts: [{
+          ETag: etag,
+          PartNumber: 1
+        }]
+      },
+      {
+        headers: {
+          'x-mimir-cognito-id-token': `Bearer ${CONFIG.apiKey}`,
+          'Content-Type': 'application/json'
+        }
+      }
+    );
+
+    // Step 5: Add item to ROSS folder
+    await logToFile(`[UPLOAD] Step 5/5 - Adding to ROSS folder...`);
+    await axios.put(
+      `${CONFIG.mimirApiUrl}/folders/${CONFIG.rossFolderId}/content`,
+      {
+        items: [itemId]
+      },
+      {
+        headers: {
+          'x-mimir-cognito-id-token': `Bearer ${CONFIG.apiKey}`,
+          'Content-Type': 'application/json'
+        }
+      }
+    );
+
+    await logToFile(`[UPLOAD] ✓ Success - ${filename} (${fileSizeMB} MB) → Mimir ID: ${itemId}`);
+    return true;
+
+  } catch (error) {
+    await logToFile(`[UPLOAD] ✗ Failed - ${filename}: ${error.message}`);
+    if (error.response) {
+      await logToFile(`[UPLOAD] Error details: ${JSON.stringify(error.response.data)}`);
+      await logToFile(`[UPLOAD] Status: ${error.response.status}`);
+    }
+    return false;
+  }
+}
+
+// Helper function to determine file type from extension
+function getFileType(filename) {
+  const ext = path.extname(filename).toLowerCase();
+  const imageExts = ['.jpg', '.jpeg', '.png', '.gif', '.bmp', '.webp', '.svg'];
+  const videoExts = ['.mp4', '.mov', '.avi', '.mkv', '.webm', '.flv'];
+  const audioExts = ['.mp3', '.wav', '.ogg', '.m4a', '.flac'];
+  const docExts = ['.pdf', '.doc', '.docx', '.txt', '.rtf'];
+
+  if (imageExts.includes(ext)) return 'image';
+  if (videoExts.includes(ext)) return 'video';
+  if (audioExts.includes(ext)) return 'audio';
+  if (docExts.includes(ext)) return 'document';
+  return 'other';
+}
+
 // Download file from Mimir
 async function downloadFile(item) {
   if (!item.highRes) {
@@ -131,7 +264,7 @@ async function downloadFile(item) {
 
   try {
     const fileName = item.originalFileName || `${item.id}.${item.itemType}`;
-    const safeFileName = fileName.replace(/[^a-z0-9_\-\.]/gi, '_');
+    const safeFileName = sanitizeFilename(fileName);
     const filePath = path.join(CONFIG.downloadDir, safeFileName);
 
     // Check if file already exists
@@ -175,9 +308,16 @@ async function syncAllFiles() {
     let skipped = 0;
     let failed = 0;
 
+    // Build set of expected filenames from Mimir
+    const mimirFilenames = new Set();
+
     for (let i = 0; i < items.length; i++) {
       const item = items[i];
       const itemDetails = await getItemDetails(item.id);
+
+      // Track the expected filename
+      const fileName = sanitizeFilename(itemDetails.title);
+      mimirFilenames.add(fileName);
 
       const result = await downloadFile(itemDetails);
 
@@ -192,7 +332,32 @@ async function syncAllFiles() {
       }
     }
 
-    await logToFile(`[SYNC] Completed - Downloaded: ${downloaded}, Skipped: ${skipped}, Failed: ${failed}`);
+    // Clean up local files that no longer exist in Mimir
+    let deleted = 0;
+    try {
+      if (fsSync.existsSync(CONFIG.downloadDir)) {
+        const localFiles = fsSync.readdirSync(CONFIG.downloadDir);
+
+        for (const localFile of localFiles) {
+          // Skip hidden files and directories
+          if (localFile.startsWith('.')) continue;
+
+          const filePath = path.join(CONFIG.downloadDir, localFile);
+          const stats = fsSync.statSync(filePath);
+
+          // Only check files, not directories
+          if (stats.isFile() && !mimirFilenames.has(localFile)) {
+            await logToFile(`[CLEANUP] Deleting local file not in Mimir: ${localFile}`);
+            fsSync.unlinkSync(filePath);
+            deleted++;
+          }
+        }
+      }
+    } catch (error) {
+      await logToFile(`[ERROR] Cleanup failed: ${error.message}`);
+    }
+
+    await logToFile(`[SYNC] Completed - Downloaded: ${downloaded}, Skipped: ${skipped}, Failed: ${failed}, Deleted: ${deleted}`);
     await logToFile('='.repeat(80));
   } catch (error) {
     await logToFile(`[ERROR] Sync failed - ${error.message}`);
@@ -247,13 +412,22 @@ function monitorLocalFolder() {
         const previousStats = fileStats.get(filename);
 
         if (!previousStats) {
-          // New file
+          // New file detected - upload to Mimir
           const sizeMB = (stats.size / 1024 / 1024).toFixed(2);
           await logToFile(`[FILE] Added - ${filename} (${sizeMB} MB)`);
           fileStats.set(filename, {
             size: stats.size,
             mtime: stats.mtimeMs
           });
+
+          // Wait a moment to ensure file is fully written
+          await new Promise(resolve => setTimeout(resolve, 1000));
+
+          // Upload to Mimir ROSS folder
+          if (fsSync.existsSync(filePath)) {
+            await uploadFileToMimir(filePath, filename);
+          }
+
         } else if (stats.mtimeMs !== previousStats.mtime || stats.size !== previousStats.size) {
           // Modified file
           const sizeMB = (stats.size / 1024 / 1024).toFixed(2);
@@ -742,6 +916,35 @@ app.post('/api/sync', async (req, res) => {
   try {
     syncAllFiles(); // Run async in background
     res.json({ status: 'ok', message: 'Sync started' });
+  } catch (error) {
+    res.status(500).json({ status: 'error', message: error.message });
+  }
+});
+
+// API: Restart server
+app.post('/api/restart', async (req, res) => {
+  try {
+    await logToFile('[SERVER] Restart requested from dashboard');
+    res.json({ status: 'ok', message: 'Server restarting...' });
+
+    // Stop cloudflare tunnel
+    if (tunnelProcess) {
+      tunnelProcess.kill();
+    }
+
+    // Spawn new process before exiting
+    setTimeout(() => {
+      const { spawn } = require('child_process');
+      const child = spawn('node', ['mimir-webhook-server.js'], {
+        detached: true,
+        stdio: 'inherit',
+        cwd: __dirname
+      });
+      child.unref();
+
+      // Exit current process
+      process.exit(0);
+    }, 1000);
   } catch (error) {
     res.status(500).json({ status: 'error', message: error.message });
   }

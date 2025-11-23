@@ -61,16 +61,40 @@ Upload a file to the ROSS folder in Mimir and watch the console!
 
 ## What It Does
 
-When a file is uploaded to ROSS folder:
+### Mimir → Local (Download & Sync)
+
+When a file is uploaded to ROSS folder in Mimir:
 
 1. **Receives webhook** from Mimir
 2. **Fetches full item details** via API
 3. **Checks if in ROSS folder**
-4. **Logs to file**:
-   - 📥 Webhook received
-   - ✅ New item details
-   - 📊 Folder summary
-5. **(Optional) Downloads file** to `ROSS_Images/`
+4. **Logs activity** to file
+5. **Downloads file** automatically to `ROSS_Images/`
+
+### Bidirectional Sync
+
+- **Downloads**: New files from Mimir → automatically downloaded to local
+- **Deletions**: Files deleted from Mimir → automatically removed from local
+- **Monitoring**: Local file changes are detected and logged
+
+### Local → Mimir (Manual Upload)
+
+**Note**: Automatic upload from local to Mimir is **not supported** due to Mimir's complex multipart upload workflow (similar to AWS S3).
+
+To upload files to Mimir:
+1. Copy files to `ROSS_Images/` folder (they will be detected and logged)
+2. Manually upload them via the Mimir web interface at https://mimir.mjoll.no
+3. The webhook will then download them back to ensure sync
+
+**Why not automatic upload?**
+Mimir uses a 5-step AWS S3-style multipart upload process:
+1. Create item metadata (POST `/api/v1/items`)
+2. Get signed upload URLs (POST `/api/v1/items/{id}/multipart-upload`)
+3. Upload file chunks to S3 with signed URLs
+4. Complete multipart upload (POST `/api/v1/items/{id}/multipart-upload/complete`)
+5. Add item to folder (PUT `/api/v1/folders/{id}/content`)
+
+This would require significant additional complexity and the AWS SDK.
 
 ## Monitoring Logs
 

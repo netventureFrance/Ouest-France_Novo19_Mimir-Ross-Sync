@@ -81,7 +81,14 @@
                                 <span class="status-dot stopped" id="webhookStatusDot"></span>
                                 <span id="webhookStatusText">Not Synced</span>
                             </div>
-                            <div class="stat-label" style="color: #6F00FF; font-weight: 600;">Mimir Webhook</div>
+                            <div class="stat-label" style="color: white; font-weight: 600;">Mimir Webhook</div>
+                        </div>
+                    </div>
+                    <div class="stat-item">
+                        <div class="stat-icon">🌍</div>
+                        <div class="stat-content">
+                            <div class="stat-value" id="monitorWebhookUrl" style="font-size: 0.8rem; word-break: break-all;">-</div>
+                            <div class="stat-label">Webhook URL</div>
                         </div>
                     </div>
                     <div class="stat-item">
@@ -132,17 +139,20 @@
             <div class="card">
                 <h2>Actions</h2>
                 <div class="button-group">
+                    <button class="btn btn-action btn-primary" onclick="openMimirUpload()">
+                        Upload to Mimir
+                    </button>
                     <button class="btn btn-action" onclick="syncNow()">
                         Sync All Files
                     </button>
                     <button class="btn btn-action" onclick="viewFiles()">
                         View Downloaded Files
                     </button>
+                    <button class="btn btn-action btn-warning" onclick="restartServer()">
+                        Restart Server
+                    </button>
                     <button class="btn btn-action" onclick="clearLogs()">
                         Clear Logs
-                    </button>
-                    <button class="btn btn-action" onclick="restartServer()">
-                        Restart Instructions
                     </button>
                 </div>
             </div>
