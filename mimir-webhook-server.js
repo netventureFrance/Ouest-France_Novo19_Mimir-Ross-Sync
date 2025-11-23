@@ -16,6 +16,7 @@ let CONFIG = {
   logFile: path.join(__dirname, 'logs', 'mimir-ross.log'),
   downloadDir: path.join(__dirname, 'ROSS_Images'),
   heartbeatInterval: 5 * 60 * 1000, // 5 minutes in milliseconds
+  syncInterval: 30 * 60 * 1000, // 30 minutes in milliseconds - auto-sync moved files
   publicUrl: '' // Public URL for webhooks (e.g., Cloudflare Tunnel)
 };
 
@@ -49,13 +50,15 @@ async function loadConfigFromFile() {
     if (savedConfig.port) CONFIG.port = savedConfig.port;
     if (savedConfig.publicUrl !== undefined) CONFIG.publicUrl = savedConfig.publicUrl;
     if (savedConfig.heartbeatInterval) CONFIG.heartbeatInterval = savedConfig.heartbeatInterval;
+    if (savedConfig.syncInterval) CONFIG.syncInterval = savedConfig.syncInterval;
   } catch (error) {
     // Config file doesn't exist or is invalid, use defaults
   }
 }
 
-// Track heartbeat interval for updates
+// Track heartbeat and sync intervals for updates
 let heartbeatIntervalId = null;
+let syncIntervalId = null;
 
 const app = express();
 app.use(express.json());
@@ -1046,6 +1049,13 @@ async function startServer() {
       const minutes = Math.floor((uptime % 3600) / 60);
       await logToFile(`[HEARTBEAT] Webhook server running (uptime: ${hours}h ${minutes}m)`);
     }, CONFIG.heartbeatInterval);
+
+    // Periodic sync - automatically sync all files to catch moved items
+    syncIntervalId = setInterval(async () => {
+      const syncMinutes = Math.floor(CONFIG.syncInterval / 1000 / 60);
+      await logToFile(`[AUTO-SYNC] Running periodic sync (every ${syncMinutes}m) to catch moved files...`);
+      await syncAllFiles();
+    }, CONFIG.syncInterval);
   });
 }
 
